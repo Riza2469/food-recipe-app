@@ -217,14 +217,14 @@ def recommend_recipes():
 
 
 @app.route('/recommend', methods=['POST'])
-def handle_recommend_request():
-    return recommend_recipes()
 # def handle_recommend_request():
-#     data = request.json
-#     print(f"Received data: {data}")
-#     recommendations = recommend_recipes()
-#     print(f"Sending back: {recommendations}")
-#     return recommendations
+#     return recommend_recipes()
+def handle_recommend_request():
+    data = request.json
+    print(f"Received data: {data}")
+    recommendations = recommend_recipes()
+    print(f"Sending back: {recommendations}")
+    return recommendations
 
 @app.route('/test', methods=['GET'])
 def test():
