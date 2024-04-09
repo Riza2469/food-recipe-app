@@ -8,6 +8,7 @@ import pymongo
 from pymongo import MongoClient
 import requests
 from urllib.parse import quote_plus
+from werkzeug.exceptions import BadRequest
 
 app = Flask(__name__)
 CORS(app)
@@ -65,92 +66,6 @@ def get_unique_cuisines():
     except Exception as e:
         print(f"Error fetching cuisines: {str(e)}")
         return jsonify({'error': f'Failed to fetch cuisines: {str(e)}'}), 500
-
-# @app.route('/cuisines', methods=['GET'])
-# def get_unique_cuisines():
-#     print("Fetching cuisines...")
-#     return jsonify({"message": "Route is working"})
-
-
-# def recommend_recipes():
-#     data = request.get_json()
-#     input_ingredients = data.get('input', '')
-#     cuisine_types = data.get('cuisine_type', [])
-#     if isinstance(cuisine_types, str):
-#         cuisine_types = [cuisine_types.lower()]
-#     elif not isinstance(cuisine_types, list):
-#         cuisine_types = []
-
-#     recipes_df = load_data_from_mongodb()
-#     if recipes_df.empty:
-#         return jsonify({'error': 'No recipes found'}), 400
-
-#     # Ensure ingredients and cuisine are lowercase for consistent comparison
-#     recipes_df['ingredients'] = recipes_df['ingredients'].str.lower()
-#     # recipes_df['cuisine'] = recipes_df['cuisine'].str.lower()
-#     if cuisine_types:
-#         # Make sure to compare with the 'Type' column if that's what you're using
-#         filtered_recipes = recipes_df[recipes_df['Type'].str.lower().isin(cuisine_types)]
-#     else:
-#         # If no cuisine type is specified, consider all recipes
-#         filtered_recipes = recipes_df
-
-#     input_ingredients_set = set(ingredient.strip().lower() for ingredient in input_ingredients.split(','))
-
-#     # Filter by cuisine only if cuisine_types is not empty
-#     if cuisine_types:
-#         filtered_recipes = recipes_df[recipes_df['cuisine'].isin(cuisine_types)]
-#     else:
-#         # If no cuisine type is specified, consider all recipes
-#         filtered_recipes = recipes_df
-
-#     # Then, filter by matching ingredients
-#     filtered_recipes['matching_ingredients'] = filtered_recipes['ingredients'].apply(
-#         lambda x: sum(ingredient in input_ingredients_set for ingredient in x.split(', '))
-#     )
-
-#     # Proceed with TF-IDF, cosine similarities, and combined score calculation...
-#     try:
-#         tfidf_vectorizer = TfidfVectorizer(stop_words='english')
-#         tfidf_matrix = tfidf_vectorizer.fit_transform(filtered_recipes['ingredients'])
-
-#         input_vec = tfidf_vectorizer.transform([input_ingredients])
-#         cosine_similarities = linear_kernel(input_vec, tfidf_matrix).flatten()
-
-#         filtered_recipes['similarity_score'] = cosine_similarities
-#         filtered_recipes['rating'] = filtered_recipes.get('rating', 0).astype(float)
-
-#         filtered_recipes['combined_score'] = filtered_recipes['matching_ingredients'] * 0.5 + filtered_recipes['similarity_score'] * 0.25 + filtered_recipes['rating'] * 0.25
-
-#         recommendations = filtered_recipes.sort_values(by=['combined_score', 'matching_ingredients'], ascending=False).head(10)
-#     except Exception as e:
-#         return jsonify({'error': f'Failed to generate recommendations: {str(e)}'}), 500
-
-#     # recommendations_list = [{
-#     #     "title": row['recipe_title'],
-#     #     "Description": row['description'],
-#     #     "Cuisine": row['cuisine'],
-#     #     "Course": row['course'],
-#     #     "Cook_time": row['cook_time'],
-#     #     "Author": row['author'],
-#     #     "Ingredients": row['ingredients'],
-#     #     "Instructions": row['instructions'],
-#     # } for _, row in recommendations.iterrows()]
-
-#     recommendations_list = [{
-#         "title": row['recipe_title'],
-#         "description": row['description'],
-#         "cuisine": row['cuisine'],
-#         "course": row['course'],
-#         "cook_time": row['cook_time'],
-#         "author": row['author'],
-#         "ingredients": row['ingredients'],
-#         "instructions": row['instructions'],
-#         "image_url": row.get('image_url') or fetch_spoonacular_image_url(row['recipe_title']),
-#         "rating": row['rating']
-#     } for _, row in recommendations.iterrows()]
-
-#     return jsonify({'recommendations': recommendations_list})
 
 def recommend_recipes():
     data = request.get_json()
@@ -225,6 +140,49 @@ def handle_recommend_request():
     recommendations = recommend_recipes()
     print(f"Sending back: {recommendations}")
     return recommendations
+
+def validate_recipe(data):
+    # Define mandatory fields
+    mandatory_fields = ['title', 'description', 'cuisine', 'course', 'ingredients', 'instructions']
+    
+    # Check for missing fields
+    for field in mandatory_fields:
+        if field not in data:
+            raise ValueError(f"Field '{field}' is missing.")
+    
+    # Check for empty string fields
+    for field in data:
+        if isinstance(data[field], str) and not data[field].strip():
+            raise ValueError(f"Field '{field}' cannot be empty.")
+    
+    # Additional validation can go here (e.g., check data types, value ranges, etc.)
+    # ...
+
+    return data
+
+@app.route('/add_recipe', methods=['POST'])
+def add_recipe():
+    try:
+        # Get the JSON data from the request
+        recipe_data = request.get_json()
+        
+        # Validate and clean the recipe data
+        recipe_data = validate_recipe(recipe_data)
+        
+        # Insert the recipe into the database
+        inserted_result = recipes_collection.insert_one(recipe_data)
+        
+        # Return success message with inserted document ID
+        return jsonify({'message': 'Recipe added successfully!', 'recipe_id': str(inserted_result.inserted_id)}), 201
+    except ValueError as ve:
+        # If validation error, return a bad request response
+        return jsonify({'error': str(ve)}), 400
+    except BadRequest:
+        return jsonify({"error": "Invalid JSON data provided."}), 400
+    except Exception as e:
+        # If an unexpected error occurs, print it to the console and return an error message
+        print(f"An error occurred: {e}")
+        return jsonify({'error': 'An internal error occurred'}), 500
 
 @app.route('/test', methods=['GET'])
 def test():
