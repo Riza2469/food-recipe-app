@@ -295,7 +295,8 @@ def get_my_favorites():
             return jsonify({'error': 'User ID is required as a query parameter.'}), 400
         favorite_recipes = user_favorites_collection.find({'user_id': uid})
         recipes_list = [str(recipe['recipe_id']) for recipe in favorite_recipes]  # Convert ObjectId to string
-        return jsonify(recipes_list), 200
+        # return jsonify(recipes_list), 200
+        return jsonify({'recipes': recipes_list}), 200
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 401
     except Exception as e:
