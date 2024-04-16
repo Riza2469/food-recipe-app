@@ -131,6 +131,7 @@ def recommend_recipes():
             # Fallback to a default image or another source if Spoonacular doesn't return an image
             image_url = "https://example.com/default_image.jpg"
         recommendations_list.append({
+            "_id": str(row['_id']), 
             "title": row['recipe_title'],
             "description": row['description'],
             "cuisine": row['cuisine'],
