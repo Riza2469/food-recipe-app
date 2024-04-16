@@ -163,6 +163,22 @@ def get_recipe():
     except Exception as e:
         return jsonify({'error': f'An internal error occurred: {str(e)}'}), 500
 
+# @app.route('/rate_recipe', methods=['POST'])
+# def rate_recipe():
+#     try:
+#         recipe_name = request.json.get('recipe_name')
+#         recipe = recipes_collection.find_one({"recipe_title": {"$regex": f"^{recipe_name}$", "$options": "i"}})
+#         if not recipe:
+#             return jsonify({'message': 'Recipe not found'}), 404
+
+#         recipe_id = recipe['_id']
+#         current_rating = recipe.get('rating', 0)
+#         new_rating = current_rating + 1
+#         recipes_collection.update_one({'_id': ObjectId(recipe_id)}, {'$set': {'rating': new_rating}})
+#         return jsonify({'message': 'Recipe rated successfully', 'new_rating': new_rating}), 200
+#     except Exception as e:
+#         return jsonify({'error': f'Failed to rate recipe: {str(e)}'}), 500
+
 @app.route('/rate_recipe', methods=['POST'])
 def rate_recipe():
     try:
@@ -172,9 +188,10 @@ def rate_recipe():
             return jsonify({'message': 'Recipe not found'}), 404
 
         recipe_id = recipe['_id']
-        current_rating = recipe.get('rating', 0)
-        new_rating = current_rating + 1
-        recipes_collection.update_one({'_id': ObjectId(recipe_id)}, {'$set': {'rating': new_rating}})
+        recipes_collection.update_one({'_id': ObjectId(recipe_id)}, {'$inc': {'rating': 0.1}})
+        updated_recipe = recipes_collection.find_one({'_id': ObjectId(recipe_id)})
+        new_rating = updated_recipe.get('rating', 0)
+
         return jsonify({'message': 'Recipe rated successfully', 'new_rating': new_rating}), 200
     except Exception as e:
         return jsonify({'error': f'Failed to rate recipe: {str(e)}'}), 500
