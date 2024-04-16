@@ -274,6 +274,19 @@ def get_my_recipes():
     except Exception as e:
         return jsonify({'error': 'Failed to fetch recipes: {}'.format(e)}), 500
 
+# @app.route('/my_favorites', methods=['GET'])
+# def get_my_favorites():
+#     try:
+#         uid = request.args.get('uid')
+#         if not uid:
+#             return jsonify({'error': 'User ID is required as a query parameter.'}), 400
+#         favorite_recipes = user_favorites_collection.find({'user_id': uid})
+#         recipes_list = [recipe['recipe_id'] for recipe in favorite_recipes]
+#         return jsonify(recipes_list), 200
+#     except ValueError as ve:
+#         return jsonify({'error': str(ve)}), 401
+#     except Exception as e:
+#         return jsonify({'error': 'Failed to fetch favorite recipes: {}'.format(e)}), 500
 @app.route('/my_favorites', methods=['GET'])
 def get_my_favorites():
     try:
@@ -281,12 +294,13 @@ def get_my_favorites():
         if not uid:
             return jsonify({'error': 'User ID is required as a query parameter.'}), 400
         favorite_recipes = user_favorites_collection.find({'user_id': uid})
-        recipes_list = [recipe['recipe_id'] for recipe in favorite_recipes]
+        recipes_list = [str(recipe['recipe_id']) for recipe in favorite_recipes]  # Convert ObjectId to string
         return jsonify(recipes_list), 200
     except ValueError as ve:
         return jsonify({'error': str(ve)}), 401
     except Exception as e:
         return jsonify({'error': 'Failed to fetch favorite recipes: {}'.format(e)}), 500
+
     
 @app.route('/add_to_favorites', methods=['POST'])
 def add_to_favorites():
