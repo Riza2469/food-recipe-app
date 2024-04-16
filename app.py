@@ -1,3 +1,4 @@
+from urllib.parse import quote_plus
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pandas as pd
@@ -9,6 +10,7 @@ from bson import ObjectId ,errors
 from bson import json_util
 from flask import Response
 import json
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -24,6 +26,29 @@ recipes_collection = mongo_db['recipes']
 user_recipes_collection = mongo_db['user_recipes']
 user_favorites_collection = mongo_db['user_favorites']
 
+def fetch_unsplash_image_url(query, fallback_query=None):
+    access_key = os.getenv('UNSPLASH_ACCESS_KEY')
+    if not access_key:
+        raise ValueError("Unsplash Access Key is not set in environment variables")
+
+    # First, try searching with the primary query
+    url = f'https://api.unsplash.com/search/photos?query={quote_plus(query)}&client_id={access_key}'
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        if data['results']:
+            return data['results'][0]['urls']['regular']
+
+    # If no results, try the fallback query if provided
+    if fallback_query:
+        url = f'https://api.unsplash.com/search/photos?query={quote_plus(fallback_query)}&client_id={access_key}'
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            if data['results']:
+                return data['results'][0]['urls']['regular']
+
+    return None
 
 @app.route('/get_recipe_id', methods=['GET'])
 def get_recipe_id_by_name():
@@ -101,7 +126,7 @@ def recommend_recipes():
 
     recommendations_list = []
     for _, row in recommendations.iterrows():
-        image_url = row.get('image_url') or fetch_image_url(row['recipe_title'])
+        image_url = row.get('image_url') or fetch_unsplash_image_url(row['recipe_title'])
         if not image_url:
             # Fallback to a default image or another source if Spoonacular doesn't return an image
             image_url = "https://example.com/default_image.jpg"
@@ -115,6 +140,7 @@ def recommend_recipes():
             "ingredients": row['ingredients'],
             "instructions": row['instructions'],
             "image_url": image_url,
+            # "image_url": row.get('image_url') or fetch_unsplash_image_url(row['recipe_title']),
             "rating": row['rating']
         })
 
@@ -227,7 +253,7 @@ def add_recipe():
             'cook_time': recipe_data['cook_time'],
             'ingredients': recipe_data['ingredients'],
             'instructions': recipe_data['instructions'],
-            'author': recipe_data['author'],
+            'author': recipe_data['author']
             # 'user_id': uid  # This field associates the recipe with the user who added it
         }
 
@@ -348,6 +374,8 @@ def get_trending_recipes():
         # Convert MongoDB BSON to JSON
         for recipe in trending_recipes:
             recipe['_id'] = str(recipe['_id'])  # Convert ObjectId to string for JSON compatibility
+            image_url = fetch_unsplash_image_url(recipe['recipe_title'])
+            recipe['image_url'] = image_url
 
         return jsonify(trending_recipes), 200
     except Exception as e:
