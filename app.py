@@ -126,7 +126,7 @@ def recommend_recipes():
 
     recommendations_list = []
     for _, row in recommendations.iterrows():
-        image_url = row.get('image_url') or fetch_unsplash_image_url(row['recipe_title'])
+        image_url = fetch_unsplash_image_url(row['recipe_title'])
         if not image_url:
             # Fallback to a default image or another source if Spoonacular doesn't return an image
             image_url = "https://example.com/default_image.jpg"
@@ -183,6 +183,8 @@ def get_recipe():
 
         # Convert ObjectId to string for JSON serialization
         recipe['_id'] = str(recipe['_id'])
+        image_url = fetch_unsplash_image_url(recipe['recipe_title'])
+        recipe['image_url'] = image_url
 
         # Return the found recipe
         return jsonify(recipe), 200
