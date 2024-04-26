@@ -1,3 +1,4 @@
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
 from urllib.parse import quote_plus
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -11,6 +12,9 @@ from bson import json_util
 from flask import Response
 import json
 import requests
+import beam_search
+import top_sampling
+
 
 app = Flask(__name__)
 CORS(app)
@@ -25,6 +29,36 @@ mongo_db = mongo_client['recipeDatabase']
 recipes_collection = mongo_db['recipes']
 user_recipes_collection = mongo_db['user_recipes']
 user_favorites_collection = mongo_db['user_favorites']
+
+
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained("flax-community/t5-recipe-generation")
+    model = AutoModelForSeq2SeqLM.from_pretrained("flax-community/t5-recipe-generation")
+    generator = pipeline("text2text-generation", model=model, tokenizer=tokenizer)
+    return generator, tokenizer
+
+
+def generate_recipe(ingredients):
+    # Load the model globally for efficiency (consider caching for larger models)
+    generator, tokenizer = load_model()
+    all_ingredients = ", ".join(ingredients)
+    
+    # Generate recipe using chosen logic
+    if sampling_mode == "Beam Search":
+        generated = generator(all_ingredients, return_tensors=True, return_text=False, **beam_search.generate_kwargs)
+        outputs = beam_search.post_generator(generated, tokenizer)
+    elif sampling_mode == "Top-k Sampling":
+        generated = generator(all_ingredients, return_tensors=True, return_text=False, **top_sampling.generate_kwargs)
+        outputs = top_sampling.post_generator(generated, tokenizer)
+    output = outputs[0]
+    return output
+
+@app.route('/generate_recipe', methods=['POST'])
+def generate_recipe_api():
+    data = request.get_json()
+    ingredients = data["ingredients"]
+    recipe = generate_recipe(ingredients)
+    return jsonify(recipe)
 
 def fetch_unsplash_image_url(query, fallback_query=None):
     access_key = os.getenv('UNSPLASH_ACCESS_KEY')
@@ -64,6 +98,55 @@ def get_recipe_id_by_name():
             return jsonify({'message': 'Recipe not found'}), 404
     except Exception as e:
         return jsonify({'error': 'Failed to fetch recipe ID'}), 500
+
+# @app.route('/get_recipes_by_name', methods=['GET'])
+# def get_recipes_by_name():
+#     try:
+#         recipe_name = request.args.get('recipe_name')
+#         if not recipe_name:
+#             return jsonify({'error': 'Recipe name is required as a query parameter.'}), 400
+
+#         # Perform a case-insensitive search for recipes with names similar to the input
+#         recipes_cursor = recipes_collection.find({"recipe_title": {"$regex": f".*{recipe_name}.*", "$options": "i"}}).limit(10)
+#         recipes_list = list(recipes_cursor)
+
+#         # Convert ObjectId to string for JSON compatibility
+#         for recipe in recipes_list:
+#             recipe['_id'] = str(recipe['_id'])
+
+#         return jsonify({'recipes': recipes_list}), 200
+#     except Exception as e:
+#         return jsonify({'error': f'Failed to fetch recipes: {str(e)}'}), 500
+@app.route('/get_recipes_by_name', methods=['GET'])
+def get_recipes_by_name():
+    try:
+        recipe_name = request.args.get('recipe_name')
+        if not recipe_name:
+            return jsonify({'error': 'Recipe name is required as a query parameter.'}), 400
+
+        # Perform a case-insensitive search for recipes with names similar to the input
+        recipes_cursor = recipes_collection.find({"recipe_title": {"$regex": f".*{recipe_name}.*", "$options": "i"}}).limit(10)
+        recipes_list = list(recipes_cursor)
+
+        # Convert ObjectId to string for JSON compatibility
+        for recipe in recipes_list:
+            recipe['_id'] = str(recipe['_id'])
+
+        # If less than 10 recipes are found, fetch more
+        if len(recipes_list) < 10:
+            additional_recipes_cursor = recipes_collection.find({
+                "recipe_title": {"$regex": f".*{recipe_name}.*", "$options": "i"},
+                "_id": {"$nin": [recipe['_id'] for recipe in recipes_list]}}).limit(10 - len(recipes_list))
+            additional_recipes_list = list(additional_recipes_cursor)
+            for recipe in additional_recipes_list:
+                recipe['_id'] = str(recipe['_id'])
+            recipes_list.extend(additional_recipes_list)
+
+        return jsonify({'recipes': recipes_list}), 200
+    except Exception as e:
+        return jsonify({'error': f'Failed to fetch recipes: {str(e)}'}), 500
+
+
 
 
 
@@ -192,22 +275,6 @@ def get_recipe():
     except Exception as e:
         return jsonify({'error': f'An internal error occurred: {str(e)}'}), 500
 
-# @app.route('/rate_recipe', methods=['POST'])
-# def rate_recipe():
-#     try:
-#         recipe_name = request.json.get('recipe_name')
-#         recipe = recipes_collection.find_one({"recipe_title": {"$regex": f"^{recipe_name}$", "$options": "i"}})
-#         if not recipe:
-#             return jsonify({'message': 'Recipe not found'}), 404
-
-#         recipe_id = recipe['_id']
-#         current_rating = recipe.get('rating', 0)
-#         new_rating = current_rating + 1
-#         recipes_collection.update_one({'_id': ObjectId(recipe_id)}, {'$set': {'rating': new_rating}})
-#         return jsonify({'message': 'Recipe rated successfully', 'new_rating': new_rating}), 200
-#     except Exception as e:
-#         return jsonify({'error': f'Failed to rate recipe: {str(e)}'}), 500
-
 @app.route('/rate_recipe', methods=['POST'])
 def rate_recipe():
     try:
@@ -303,19 +370,6 @@ def get_my_recipes():
     except Exception as e:
         return jsonify({'error': 'Failed to fetch recipes: {}'.format(e)}), 500
 
-# @app.route('/my_favorites', methods=['GET'])
-# def get_my_favorites():
-#     try:
-#         uid = request.args.get('uid')
-#         if not uid:
-#             return jsonify({'error': 'User ID is required as a query parameter.'}), 400
-#         favorite_recipes = user_favorites_collection.find({'user_id': uid})
-#         recipes_list = [recipe['recipe_id'] for recipe in favorite_recipes]
-#         return jsonify(recipes_list), 200
-#     except ValueError as ve:
-#         return jsonify({'error': str(ve)}), 401
-#     except Exception as e:
-#         return jsonify({'error': 'Failed to fetch favorite recipes: {}'.format(e)}), 500
 @app.route('/my_favorites', methods=['GET'])
 def get_my_favorites():
     try:
@@ -390,4 +444,5 @@ def test():
     return jsonify({"message": "Test route is working!"}), 200
 
 if __name__ == '__main__':
+    sampling_mode = "Beam Search"  # or "Top-k Sampling"
     app.run(debug=True)
